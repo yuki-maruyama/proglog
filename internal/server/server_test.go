@@ -10,13 +10,12 @@ import (
 	api "github.com/yuki-maruyama/proglog/api/v1"
 	"github.com/yuki-maruyama/proglog/internal/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
 func TestServer(t *testing.T) {
-	for scenario, _ := range map[string]func(
+	for scenario, fn := range map[string]func(
 		t *testing.T,
 		client api.LogClient,
 		config *Config,
@@ -26,6 +25,9 @@ func TestServer(t *testing.T) {
 		"consume past log boundary fails":                     testConsumePastBoundary,
 	} {
 		t.Run(scenario, func(t *testing.T) {
+			client, config, teardown := setupTest(t, nil)
+			defer teardown()
+			fn(t, client, config)
 		})
 	}
 }
@@ -40,7 +42,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	require.NoError(t, err)
 	clientOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials())}
-	cc, err := grpc.Dial(l.Addr().String(), clientOptions...)
+	cc, err := grpc.NewClient(l.Addr().String(), clientOptions...)
 	require.NoError(t, err)
 	dir, err := os.MkdirTemp("", "server-test")
 	require.NoError(t, err)
@@ -111,7 +113,7 @@ func testConsumePastBoundary(
 		t.Fatal("consume not nil")
 	}
 	got := status.Code(err)
-	want := codes.OutOfRange
+	want := status.Code(api.ErrOffsetOutOfRange{}.GRPCStatus().Err())
 	if got != want {
 		t.Fatalf("got err: %v, want: %v", got, want)
 	}
